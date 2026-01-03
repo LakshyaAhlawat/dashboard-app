@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import AuthNavbar from "@/components/layout/AuthNavbar";
 import LoginForm from "@/components/auth/LoginForm";
 
@@ -9,7 +10,9 @@ export default function LoginPage() {
   return (
     <>
       <AuthNavbar />
-      <LoginForm />
+      <Suspense fallback={null}>
+        <LoginForm />
+      </Suspense>
     </>
   );
 }
