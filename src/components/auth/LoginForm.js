@@ -1,16 +1,24 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { signIn } from "next-auth/react";
-import { useSearchParams } from "next/navigation";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Label } from "@/components/ui/Label";
 
 export default function LoginForm() {
-  const searchParams = useSearchParams();
-  const error = searchParams.get("error");
+  const [error, setError] = useState(null);
   const router = useRouter();
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const value = params.get("error");
+    if (value) {
+      setError(value);
+    }
+  }, []);
 
   async function handleSubmit(event) {
     event.preventDefault();
