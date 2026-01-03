@@ -1,0 +1,38 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String   @id @default(cuid())
+  name          String?  
+  email         String?  @unique
+  emailVerified DateTime?
+  image         String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orders    Order[]
+}
+
+model Order {
+  id          String   @id @default(cuid())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  customer    String
+  status      String   // e.g. "in_progress", "queued", "completed", "at_risk"
+  value       Int      // store in minor units (e.g. cents)
+  currency    String   @default("USD")
+  channel     String   // e.g. "Web", "API", "Mobile"
+  etaMinutes  Int?
+  riskLevel   String?  // e.g. "low", "medium", "high"
+
+  userId      String?  // optional owner
+  user        User?    @relation(fields: [userId], references: [id])
+}
