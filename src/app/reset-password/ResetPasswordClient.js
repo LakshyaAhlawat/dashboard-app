@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useSearchParams } from "next/navigation";
 import { useToast } from "@/components/ui/ToastProvider";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -11,8 +10,7 @@ import { Label } from "@/components/ui/Label";
 export default function ResetPasswordClient({ token: initialToken }) {
   const router = useRouter();
   const { showToast } = useToast();
-  const searchParams = useSearchParams();
-  const token = searchParams.get("token") || initialToken || "";
+  const token = initialToken || "";
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [loading, setLoading] = useState(false);
