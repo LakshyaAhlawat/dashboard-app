@@ -6,6 +6,10 @@ export const metadata = {
   title: "Login | Admin Dashboard",
 };
 
+// Ensure this route is always rendered dynamically to avoid
+// static prerendering issues in some environments.
+export const dynamic = "force-dynamic";
+
 export default function LoginPage() {
   return (
     <>
