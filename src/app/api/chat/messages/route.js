@@ -18,6 +18,7 @@ function formatMessage(doc) {
     attachment: doc.attachment || null,
     reactions: doc.reactions || {},
     createdAt: doc.createdAt,
+    deletedForAll: Boolean(doc.deletedForAll),
   };
 }
 
@@ -53,7 +54,12 @@ export async function GET(request) {
     .limit(500)
     .toArray();
 
-  return Response.json({ messages: docs.map(formatMessage) });
+  const filtered = docs.filter((doc) => {
+    const deletedFor = Array.isArray(doc.deletedFor) ? doc.deletedFor : [];
+    return !deletedFor.includes(currentId);
+  });
+
+  return Response.json({ messages: filtered.map(formatMessage) });
 }
 
 export async function POST(request) {
@@ -96,6 +102,8 @@ export async function POST(request) {
     text,
     attachment,
     reactions: {},
+    deletedFor: [],
+    deletedForAll: false,
     createdAt: new Date(),
   };
 
@@ -123,5 +131,78 @@ export async function POST(request) {
   );
 
   return Response.json({ message: formatMessage({ _id: result.insertedId, ...doc }) });
+}
+
+export async function DELETE(request) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const body = await request.json();
+  const conversationId = String(body.conversationId || "").trim();
+  const messageIds = Array.isArray(body.messageIds) ? body.messageIds : [];
+  const scope = body.scope === "everyone" ? "everyone" : "me";
+
+  if (!conversationId || !messageIds.length) {
+    return Response.json({ error: "conversationId and messageIds are required" }, { status: 400 });
+  }
+
+  const client = await clientPromise;
+  const db = client.db(DB_NAME);
+  const conversations = db.collection(CONVERSATIONS);
+  const collection = db.collection(COLLECTION);
+
+  const existingConv = await conversations.findOne({ _id: new ObjectId(conversationId) });
+  const currentId = session.user.id || session.user.email;
+  if (!existingConv || !existingConv.participants?.some((p) => p.id === currentId)) {
+    return Response.json({ error: "Conversation not found" }, { status: 404 });
+  }
+
+  const objectIds = messageIds
+    .map((id) => {
+      try {
+        return new ObjectId(id);
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean);
+
+  if (!objectIds.length) {
+    return Response.json({ error: "No valid messageIds" }, { status: 400 });
+  }
+
+  const targetMessages = await collection
+    .find({ _id: { $in: objectIds }, conversationId: new ObjectId(conversationId) })
+    .toArray();
+
+  if (!targetMessages.length) {
+    return Response.json({ ok: true, updated: 0 });
+  }
+
+  if (scope === "everyone") {
+    const allFromCurrentUser = targetMessages.every((msg) => msg.senderId === currentId);
+    if (!allFromCurrentUser) {
+      return Response.json(
+        { error: "You can only delete your own messages for everyone." },
+        { status: 403 }
+      );
+    }
+
+    const result = await collection.updateMany(
+      { _id: { $in: objectIds } },
+      { $set: { deletedForAll: true, text: "", attachment: null } }
+    );
+
+    return Response.json({ ok: true, updated: result.modifiedCount });
+  }
+
+  const result = await collection.updateMany(
+    { _id: { $in: objectIds } },
+    { $addToSet: { deletedFor: currentId } }
+  );
+
+  return Response.json({ ok: true, updated: result.modifiedCount });
 }
 
