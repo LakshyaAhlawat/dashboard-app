@@ -468,7 +468,7 @@ export default function ChatClientClean() {
               </button>
               <button
                 type="button"
-                className="hidden items-center gap-1 rounded-full border border-slate-700 bg-slate-900 px-2 py-0.5 text-[10px] text-slate-200 hover:border-sky-500 hover:text-sky-100 sm:inline-flex"
+                className="inline-flex items-center gap-1 rounded-full border border-slate-700 bg-slate-900 px-2 py-0.5 text-[10px] text-slate-200 hover:border-sky-500 hover:text-sky-100"
                 onClick={() => {
                   if (selectionMode) {
                     clearSelection();
