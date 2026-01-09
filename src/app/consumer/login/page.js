@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { signIn } from "next-auth/react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -8,9 +9,13 @@ import { Label } from "@/components/ui/Label";
 
 export default function ConsumerLoginPage() {
   const router = useRouter();
+  const [loading, setLoading] = useState(false);
+  const [oauthProvider, setOauthProvider] = useState(null); // "google" | "github" | null
 
   async function handleSubmit(event) {
     event.preventDefault();
+
+    setLoading(true);
 
     const formData = new FormData(event.currentTarget);
     const email = formData.get("email");
@@ -36,8 +41,12 @@ export default function ConsumerLoginPage() {
         <Button
           type="button"
           variant="outline"
-          className="flex w-full items-center justify-center gap-2 border-sky-600/70 bg-slate-900/80 text-slate-100 shadow-[0_0_25px_rgba(56,189,248,0.35)] hover:border-sky-400 hover:bg-slate-900"
-          onClick={() => signIn("google", { callbackUrl: "/consumer" })}
+          disabled={loading || Boolean(oauthProvider)}
+          className="flex w-full items-center justify-center gap-2 border-sky-600/70 bg-slate-900/80 text-slate-100 shadow-[0_0_25px_rgba(56,189,248,0.35)] hover:border-sky-400 hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
+          onClick={async () => {
+            setOauthProvider("google");
+            await signIn("google", { callbackUrl: "/consumer" });
+          }}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
@@ -45,13 +54,19 @@ export default function ConsumerLoginPage() {
             alt="Google"
             className="h-5 w-5 rounded"
           />
-          <span>Continue with Google</span>
+          <span>
+            {oauthProvider === "google" ? "Signing in with Google..." : "Continue with Google"}
+          </span>
         </Button>
         <Button
           type="button"
           variant="outline"
-          className="flex w-full items-center justify-center gap-2 border-slate-700 bg-slate-900/80 text-slate-100 hover:border-slate-500 hover:bg-slate-900"
-          onClick={() => signIn("github", { callbackUrl: "/consumer" })}
+          disabled={loading || Boolean(oauthProvider)}
+          className="flex w-full items-center justify-center gap-2 border-slate-700 bg-slate-900/80 text-slate-100 hover:border-slate-500 hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
+          onClick={async () => {
+            setOauthProvider("github");
+            await signIn("github", { callbackUrl: "/consumer" });
+          }}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
@@ -59,7 +74,9 @@ export default function ConsumerLoginPage() {
             alt="GitHub"
             className="h-5 w-5 rounded"
           />
-          <span>Continue with GitHub</span>
+          <span>
+            {oauthProvider === "github" ? "Signing in with GitHub..." : "Continue with GitHub"}
+          </span>
         </Button>
       </div>
       <form onSubmit={handleSubmit} className="space-y-4">
@@ -73,9 +90,10 @@ export default function ConsumerLoginPage() {
         </div>
         <Button
           type="submit"
-          className="mt-2 w-full justify-center bg-linear-to-r from-sky-500 to-indigo-500 hover:from-sky-400 hover:to-indigo-400"
+          disabled={loading || Boolean(oauthProvider)}
+          className="mt-2 w-full justify-center bg-linear-to-r from-sky-500 to-indigo-500 hover:from-sky-400 hover:to-indigo-400 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          Sign in
+          {loading ? "Signing in..." : "Sign in"}
         </Button>
       </form>
       <p className="mt-4 text-center text-[11px] text-slate-500">

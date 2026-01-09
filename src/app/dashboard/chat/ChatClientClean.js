@@ -22,9 +22,10 @@ export default function ChatClientClean() {
   const [messages, setMessages] = useState([]);
   const [activeConversationId, setActiveConversationId] = useState(null);
   const [input, setInput] = useState("");
-  const [attachmentPreview, setAttachmentPreview] = useState(null); // { type, name, url, file? }
+  const [attachmentPreviews, setAttachmentPreviews] = useState([]); // { id, type, name, url, file?, status }
   const [isMobileListOpen, setIsMobileListOpen] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const [uploadingAttachments, setUploadingAttachments] = useState(false);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedMessageIds, setSelectedMessageIds] = useState([]);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -215,9 +216,12 @@ export default function ChatClientClean() {
   async function handleSend(event) {
     event.preventDefault();
 
-    if (isSending) return;
-
     const text = (input || "").trim();
+    const hasText = Boolean(text);
+    const hasAttachments = attachmentPreviews.length > 0;
+
+    if (isSending || uploadingAttachments) return;
+
     if (!activeConversationId) {
       showToast({
         title: "No conversation selected",
@@ -227,80 +231,130 @@ export default function ChatClientClean() {
       return;
     }
 
-    if (!text && !attachmentPreview) return;
+    if (!hasText && !hasAttachments) return;
 
-  setIsSending(true);
-
-    const optimisticId = `temp-${Date.now()}`;
-    let attachmentToSend = null;
-
-    if (attachmentPreview?.file) {
+    // First upload all attachments if needed
+    let finalAttachments = attachmentPreviews;
+    if (hasAttachments) {
+      setUploadingAttachments(true);
       try {
-        const form = new FormData();
-        form.append("file", attachmentPreview.file);
-        const uploadRes = await fetch("/api/chat/upload", {
-          method: "POST",
-          body: form,
-        });
-        if (uploadRes.ok) {
-          const uploadData = await uploadRes.json();
-          if (uploadData?.url) {
-            attachmentToSend = {
-              type: attachmentPreview.type,
-              name: attachmentPreview.name,
-              url: uploadData.url,
-            };
+        const updated = [];
+        for (const att of attachmentPreviews) {
+          if (att.url && !att.file) {
+            updated.push(att);
+            continue;
           }
+          if (!att.file) {
+            updated.push(att);
+            continue;
+          }
+          const form = new FormData();
+          form.append("file", att.file);
+          const uploadRes = await fetch("/api/chat/upload", {
+            method: "POST",
+            body: form,
+          });
+          if (!uploadRes.ok) {
+            throw new Error("Upload failed");
+          }
+          const uploadData = await uploadRes.json();
+          if (!uploadData?.url) {
+            throw new Error("Upload failed");
+          }
+          updated.push({
+            ...att,
+            url: uploadData.url,
+            status: "uploaded",
+          });
         }
+        finalAttachments = updated;
+        setAttachmentPreviews(updated);
       } catch (error) {
-        console.error("Failed to upload attachment", error);
+        console.error("Failed to upload attachments", error);
+        showToast({
+          title: "Could not upload files",
+          description: "Please try again or remove the attachments.",
+          variant: "error",
+        });
+        setUploadingAttachments(false);
+        return;
       }
-    } else if (attachmentPreview) {
-      attachmentToSend = attachmentPreview;
+      setUploadingAttachments(false);
     }
 
-    const optimisticMessage = {
-      id: optimisticId,
-      conversationId: activeConversationId,
-      senderId: currentUserId,
-      senderName: session?.user?.name || session?.user?.email,
-      senderRole: "admin",
-      text,
-      attachment: attachmentToSend,
-      createdAt: new Date().toISOString(),
-      sending: true,
-    };
+    const attachmentPayloads = finalAttachments
+      .filter((att) => att.url)
+      .map((att) => ({ type: att.type, name: att.name, url: att.url }));
 
-    setMessages((current) => current.concat(optimisticMessage));
+    const payloads = [];
+
+    if (hasText && attachmentPayloads.length === 0) {
+      payloads.push({ text, attachment: null });
+    } else if (hasText && attachmentPayloads.length > 0) {
+      payloads.push({ text, attachment: attachmentPayloads[0] });
+      for (let i = 1; i < attachmentPayloads.length; i += 1) {
+        payloads.push({ text: "", attachment: attachmentPayloads[i] });
+      }
+    } else if (!hasText && attachmentPayloads.length > 0) {
+      for (const att of attachmentPayloads) {
+        payloads.push({ text: "", attachment: att });
+      }
+    }
+
+    if (!payloads.length) return;
+
+    setIsSending(true);
 
     try {
-      const res = await fetch("/api/chat/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      for (const payload of payloads) {
+        const optimisticId = `temp-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+        const optimisticMessage = {
+          id: optimisticId,
           conversationId: activeConversationId,
-          text,
-          attachment: attachmentToSend,
-        }),
+          senderId: currentUserId,
+          senderName: session?.user?.name || session?.user?.email,
+          senderRole: "admin",
+          text: payload.text,
+          attachment: payload.attachment,
+          createdAt: new Date().toISOString(),
+          sending: true,
+        };
+
+        setMessages((current) => current.concat(optimisticMessage));
+
+        const res = await fetch("/api/chat/messages", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            conversationId: activeConversationId,
+            text: payload.text,
+            attachment: payload.attachment,
+          }),
+        });
+        if (!res.ok) {
+          throw new Error("Failed to send message");
+        }
+        const data = await res.json();
+        setMessages((current) =>
+          current
+            .filter((m) => m.id !== optimisticId)
+            .concat(data.message)
+        );
+      }
+
+      // Clean up previews
+      finalAttachments.forEach((att) => {
+        if (att.file && att.url && typeof att.url === "string" && att.url.startsWith("blob:")) {
+          URL.revokeObjectURL(att.url);
+        }
       });
-      if (!res.ok) {
-        throw new Error("Failed to send message");
-      }
-      const data = await res.json();
-      setMessages((current) =>
-        current
-          .filter((m) => m.id !== optimisticId)
-          .concat(data.message)
-      );
-      if (attachmentPreview?.file && attachmentPreview.url?.startsWith("blob:")) {
-        URL.revokeObjectURL(attachmentPreview.url);
-      }
+
       setInput("");
-      setAttachmentPreview(null);
+      setAttachmentPreviews([]);
       setIsSending(false);
     } catch (error) {
       console.error("Failed to send chat message", error);
-      setMessages((current) => current.filter((m) => m.id !== optimisticId));
       showToast({
         title: "Message not sent",
         description: "Please try again in a moment.",
@@ -454,8 +508,9 @@ export default function ChatClientClean() {
             </div>
             <div className="flex items-center gap-2">
               {selectionMode && (
-                <div className="hidden items-center gap-2 rounded-full bg-slate-900 px-2 py-0.5 text-[10px] text-slate-200 sm:flex">
-                  <span>{selectedMessageIds.length} selected</span>
+                <div className="flex items-center gap-2 rounded-full bg-slate-900 px-2 py-0.5 text-[10px] text-sky-200">
+                  <span className="h-1.5 w-1.5 rounded-full bg-sky-400" />
+                  <span>Selection mode · {selectedMessageIds.length} selected</span>
                 </div>
               )}
               <button
@@ -468,7 +523,11 @@ export default function ChatClientClean() {
               </button>
               <button
                 type="button"
-                className="inline-flex items-center gap-1 rounded-full border border-slate-700 bg-slate-900 px-2 py-0.5 text-[10px] text-slate-200 hover:border-sky-500 hover:text-sky-100"
+                className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] transition-colors ${
+                  selectionMode
+                    ? "border-sky-400 bg-sky-500/10 text-sky-100"
+                    : "border-slate-700 bg-slate-900 text-slate-200 hover:border-sky-500 hover:text-sky-100"
+                }`}
                 onClick={() => {
                   if (selectionMode) {
                     clearSelection();
@@ -656,58 +715,94 @@ export default function ChatClientClean() {
             className="border-t border-slate-800 bg-slate-950/90 px-3 py-2.5 sm:px-4"
           >
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-              <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400 sm:max-w-xs sm:flex-shrink-0">
+              <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400 sm:max-w-xs sm:shrink-0">
                 <label className="inline-flex cursor-pointer items-center gap-1 rounded-full border border-dashed border-slate-700 px-2 py-1 hover:border-sky-500/60">
                   <span className="h-1.5 w-1.5 rounded-full bg-sky-400" />
                   <span>Attach</span>
                   <input
                     type="file"
+                    multiple
                     className="hidden"
                     onChange={(event) => {
-                      const file = event.target.files?.[0];
-                      if (!file) return;
-                      if (attachmentPreview?.file && attachmentPreview.url?.startsWith("blob:")) {
-                        URL.revokeObjectURL(attachmentPreview.url);
-                      }
-                      const isImage = file.type.startsWith("image/");
-                      const url = URL.createObjectURL(file);
-                      setAttachmentPreview({
-                        type: isImage ? "image" : "file",
-                        name: file.name,
-                        url,
-                        file,
+                      const files = Array.from(event.target.files || []);
+                      if (!files.length) return;
+                      setAttachmentPreviews((current) => {
+                        const next = [...current];
+                        for (const file of files) {
+                          const isImage = file.type.startsWith("image/");
+                          const url = URL.createObjectURL(file);
+                          next.push({
+                            id: `${Date.now()}-${file.name}-${Math.random()
+                              .toString(16)
+                              .slice(2)}`,
+                            type: isImage ? "image" : "file",
+                            name: file.name,
+                            url,
+                            file,
+                            status: "pending",
+                          });
+                        }
+                        return next;
                       });
+                      event.target.value = "";
                     }}
                   />
                 </label>
-                {attachmentPreview && (
-                  <div className="flex items-center gap-2 rounded-full bg-slate-900 px-2 py-0.5 text-[10px] text-slate-200">
-                    {attachmentPreview.type === "image" ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={attachmentPreview.url}
-                        alt={attachmentPreview.name || "Preview"}
-                        className="h-6 w-6 rounded object-cover"
-                      />
-                    ) : (
-                      <span className="h-1.5 w-1.5 rounded-full bg-sky-400" />
-                    )}
-                    <span className="max-w-40 truncate">{attachmentPreview.name}</span>
-                  </div>
+                {uploadingAttachments && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-slate-900 px-2 py-0.5 text-[10px] text-sky-200">
+                    <span className="h-3 w-3 animate-spin rounded-full border border-sky-400/70 border-t-transparent" />
+                    Uploading files…
+                  </span>
                 )}
-                {attachmentPreview && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (attachmentPreview?.file && attachmentPreview.url?.startsWith("blob:")) {
-                        URL.revokeObjectURL(attachmentPreview.url);
-                      }
-                      setAttachmentPreview(null);
-                    }}
-                    className="rounded-full bg-slate-900 px-2 py-0.5 text-[10px] text-slate-200 hover:bg-slate-800"
-                  >
-                    Clear
-                  </button>
+                {attachmentPreviews.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {attachmentPreviews.map((att) => (
+                      <div
+                        key={att.id}
+                        className="flex items-center gap-2 rounded-full bg-slate-900 px-2 py-0.5 text-[10px] text-slate-200"
+                      >
+                        {att.type === "image" ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={att.url}
+                            alt={att.name || "Preview"}
+                            className="h-6 w-6 rounded object-cover"
+                          />
+                        ) : (
+                          <span className="h-1.5 w-1.5 rounded-full bg-sky-400" />
+                        )}
+                        <span className="max-w-36 truncate">{att.name}</span>
+                        <span className="text-[9px] text-slate-400">
+                          {att.status === "uploaded"
+                            ? "Ready"
+                            : att.status === "uploading"
+                            ? "Uploading…"
+                            : "Will upload on send"}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAttachmentPreviews((current) => {
+                              current.forEach((item) => {
+                                if (
+                                  item.id === att.id &&
+                                  item.url &&
+                                  typeof item.url === "string" &&
+                                  item.url.startsWith("blob:")
+                                ) {
+                                  URL.revokeObjectURL(item.url);
+                                }
+                              });
+                              return current.filter((item) => item.id !== att.id);
+                            });
+                          }}
+                          className="rounded-full bg-slate-800 px-1.5 py-0.5 text-[9px] text-slate-200 hover:bg-slate-700"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
               <div className="flex items-center gap-2 sm:flex-1">
@@ -721,13 +816,15 @@ export default function ChatClientClean() {
                 />
                 <button
                   type="submit"
-                  disabled={isSending || (!input.trim() && !attachmentPreview)}
+                  disabled={isSending || uploadingAttachments || (!input.trim() && !attachmentPreviews.length)}
                   className="inline-flex items-center justify-center rounded-full bg-sky-500 px-3 py-2 text-xs font-medium text-white shadow-md shadow-sky-500/40 hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-60 sm:px-4 sm:text-sm"
                 >
                   {isSending ? (
                     <span className="flex items-center gap-1">
                       <span className="h-3 w-3 animate-spin rounded-full border border-slate-100/40 border-t-transparent" />
-                      <span>Sending…</span>
+                      <span>
+                        {attachmentPreviews.length ? "Sending messages…" : "Sending…"}
+                      </span>
                     </span>
                   ) : (
                     "Send"
@@ -735,26 +832,60 @@ export default function ChatClientClean() {
                 </button>
               </div>
               {selectionMode && selectedMessageIds.length > 0 && (
-                <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] text-slate-300">
-                  <span className="rounded-full bg-slate-900 px-2 py-0.5">
-                    {selectedMessageIds.length} selected
-                  </span>
-                  <button
-                    type="button"
-                    disabled={isDeleting}
-                    onClick={() => setDeleteDialogScope("me")}
-                    className="rounded-full bg-slate-900 px-2 py-0.5 text-slate-200 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    Delete for me
-                  </button>
-                  <button
-                    type="button"
-                    disabled={isDeleting}
-                    onClick={() => setDeleteDialogScope("everyone")}
-                    className="rounded-full bg-red-600/80 px-2 py-0.5 text-slate-50 hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    Delete for everyone
-                  </button>
+                <div className="mt-2 w-full rounded-2xl border border-slate-800 bg-slate-950/90 p-2 text-[10px] text-slate-200">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-medium">Selected messages ({selectedMessageIds.length})</span>
+                    <button
+                      type="button"
+                      onClick={clearSelection}
+                      className="rounded-full bg-slate-900 px-2 py-0.5 text-[10px] text-slate-300 hover:bg-slate-800"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                  <div className="mt-1 max-h-24 space-y-1 overflow-y-auto">
+                    {messages
+                      .filter((m) => selectedMessageIds.includes(m.id))
+                      .map((m) => (
+                        <div
+                          key={m.id}
+                          className="flex items-center justify-between gap-2 rounded-xl bg-slate-900 px-2 py-1"
+                        >
+                          <div className="min-w-0">
+                            <p className="truncate text-[10px] font-medium text-slate-100">
+                              {m.senderName}
+                            </p>
+                            <p className="truncate text-[10px] text-slate-400">
+                              {m.text ||
+                                (m.attachment
+                                  ? m.attachment.name || "Attachment"
+                                  : "(no text)" )}
+                            </p>
+                          </div>
+                          <span className="text-[9px] text-slate-500">
+                            {formatTimestamp(m.createdAt)}
+                          </span>
+                        </div>
+                      ))}
+                  </div>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={isDeleting}
+                      onClick={() => setDeleteDialogScope("me")}
+                      className="rounded-full bg-slate-900 px-2 py-0.5 text-slate-200 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      Delete for me
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isDeleting}
+                      onClick={() => setDeleteDialogScope("everyone")}
+                      className="rounded-full bg-red-600/80 px-2 py-0.5 text-slate-50 hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      Delete for everyone
+                    </button>
+                  </div>
                 </div>
               )}
             </div>

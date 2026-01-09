@@ -64,6 +64,57 @@ export default function ConsumerOrdersClient() {
     });
   }, [orders, statusFilter]);
 
+  const metrics = useMemo(() => {
+    const total = orders.length;
+    let pending = 0;
+    let inProgress = 0;
+    let approved = 0;
+    let rejected = 0;
+    let cancelled = 0;
+    let potentialRevenue = 0;
+    let approvedRevenue = 0;
+
+    for (const order of orders) {
+      const value = typeof order.budget === "number" ? order.budget : Number(order.budget || 0) || 0;
+      potentialRevenue += value;
+
+      switch (order.status) {
+        case "pending_review":
+          pending += 1;
+          break;
+        case "in_progress":
+          inProgress += 1;
+          break;
+        case "approved":
+          approved += 1;
+          approvedRevenue += value;
+          break;
+        case "rejected":
+          rejected += 1;
+          break;
+        case "cancelled":
+          cancelled += 1;
+          break;
+        default:
+          break;
+      }
+    }
+
+    const open = pending + inProgress;
+
+    return {
+      total,
+      pending,
+      inProgress,
+      approved,
+      rejected,
+      cancelled,
+      open,
+      potentialRevenue,
+      approvedRevenue,
+    };
+  }, [orders]);
+
   const currentAdminId = session?.user?.id || session?.user?.email;
 
   async function updateStatus(id, status) {
@@ -275,7 +326,8 @@ export default function ConsumerOrdersClient() {
             Consumer orders
           </h1>
           <p className="text-xs text-slate-400 md:text-sm">
-            Requests created from the public order form that you can review and action.
+            Requests created from the public order form that you can review, fulfill,
+            and turn into revenue. Typical flow: Pending review → In progress → Approved.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -298,6 +350,43 @@ export default function ConsumerOrdersClient() {
               </option>
             ))}
           </select>
+        </div>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-4">
+        <div className="rounded-2xl border border-slate-800 bg-slate-950/80 p-3 text-xs text-slate-300">
+          <p className="text-[11px] font-medium text-slate-400">Requests pipeline</p>
+          <p className="mt-1 text-lg font-semibold text-slate-50">{metrics.total}</p>
+          <p className="mt-0.5 text-[11px] text-slate-400">
+            {metrics.open} open · {metrics.approved} approved
+          </p>
+        </div>
+        <div className="rounded-2xl border border-slate-800 bg-slate-950/80 p-3 text-xs text-slate-300">
+          <p className="text-[11px] font-medium text-slate-400">Workload mix</p>
+          <p className="mt-1 text-sm text-slate-200">
+            {metrics.pending} pending · {metrics.inProgress} in progress
+          </p>
+          <p className="mt-0.5 text-[11px] text-slate-400">
+            {metrics.rejected} rejected · {metrics.cancelled} cancelled
+          </p>
+        </div>
+        <div className="rounded-2xl border border-slate-800 bg-slate-950/80 p-3 text-xs text-slate-300">
+          <p className="text-[11px] font-medium text-slate-400">Potential revenue</p>
+          <p className="mt-1 text-lg font-semibold text-emerald-300">
+            ${metrics.potentialRevenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+          </p>
+          <p className="mt-0.5 text-[11px] text-slate-400">
+            Based on customer budget fields.
+          </p>
+        </div>
+        <div className="rounded-2xl border border-slate-800 bg-slate-950/80 p-3 text-xs text-slate-300">
+          <p className="text-[11px] font-medium text-slate-400">Approved pipeline value</p>
+          <p className="mt-1 text-lg font-semibold text-sky-300">
+            ${metrics.approvedRevenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+          </p>
+          <p className="mt-0.5 text-[11px] text-slate-400">
+            Sum of budgets on approved requests.
+          </p>
         </div>
       </div>
 
@@ -329,6 +418,27 @@ export default function ConsumerOrdersClient() {
                 <TD>
                   <div className="space-y-1 text-[11px] text-slate-200">
                     <p>{order.details}</p>
+                    {Array.isArray(order.attachments) && order.attachments.length > 0 && (
+                      <div className="mt-1 space-y-1">
+                        <p className="text-[10px] font-medium text-slate-400">Attachments</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {order.attachments.map((file, idx) => (
+                            <a
+                              key={file.url || `${file.name}-${idx}`}
+                              href={file.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-1 rounded-full border border-slate-700 bg-slate-900/80 px-2 py-0.5 text-[10px] text-slate-100 hover:border-sky-500/70 hover:text-sky-100"
+                            >
+                              <span className="h-1.5 w-1.5 rounded-full bg-sky-400" />
+                              <span className="max-w-30 truncate">
+                                {file.name || "Attachment"}
+                              </span>
+                            </a>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     {order.reassignment && order.reassignment.status === "pending" && (
                       <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-[10px] text-amber-100">
                         Pending transfer to {order.reassignment.toAdminName}.

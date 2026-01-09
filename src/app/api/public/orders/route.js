@@ -61,6 +61,9 @@ export async function POST(request) {
   const adminId = body.adminId ? String(body.adminId) : null;
   const adminName = body.adminName ? String(body.adminName) : null;
   const adminEmail = body.adminEmail ? String(body.adminEmail) : null;
+  const priority = body.priority ? String(body.priority) : "normal";
+  const category = body.category ? String(body.category) : "general";
+  const attachments = Array.isArray(body.attachments) ? body.attachments : [];
 
   if (!name || !email || !details) {
     return Response.json(
@@ -82,6 +85,15 @@ export async function POST(request) {
     assignedAdminId: adminId,
     assignedAdminName: adminName,
     assignedAdminEmail: adminEmail,
+    priority,
+    category,
+    attachments: attachments
+      .filter((att) => att && typeof att === "object" && att.url)
+      .map((att) => ({
+        type: att.type === "image" ? "image" : "file",
+        name: typeof att.name === "string" ? att.name : "Attachment",
+        url: String(att.url),
+      })),
     status: "pending_review",
     createdAt: new Date(),
     updatedAt: new Date(),

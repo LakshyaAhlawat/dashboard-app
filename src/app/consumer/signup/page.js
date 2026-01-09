@@ -11,6 +11,7 @@ export default function ConsumerSignupPage() {
   const router = useRouter();
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [oauthProvider, setOauthProvider] = useState(null); // "google" | "github" | null
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -60,8 +61,12 @@ export default function ConsumerSignupPage() {
         <Button
           type="button"
           variant="outline"
-          className="flex w-full items-center justify-center gap-2 border-sky-600/70 bg-slate-900/80 text-slate-100 shadow-[0_0_25px_rgba(56,189,248,0.35)] hover:border-sky-400 hover:bg-slate-900"
-          onClick={() => signIn("google", { callbackUrl: "/consumer" })}
+          disabled={loading || Boolean(oauthProvider)}
+          className="flex w-full items-center justify-center gap-2 border-sky-600/70 bg-slate-900/80 text-slate-100 shadow-[0_0_25px_rgba(56,189,248,0.35)] hover:border-sky-400 hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
+          onClick={async () => {
+            setOauthProvider("google");
+            await signIn("google", { callbackUrl: "/consumer" });
+          }}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
@@ -69,13 +74,21 @@ export default function ConsumerSignupPage() {
             alt="Google"
             className="h-5 w-5 rounded"
           />
-          <span>Sign up with Google</span>
+          <span>
+            {oauthProvider === "google"
+              ? "Signing up with Google..."
+              : "Sign up with Google"}
+          </span>
         </Button>
         <Button
           type="button"
           variant="outline"
-          className="flex w-full items-center justify-center gap-2 border-slate-700 bg-slate-900/80 text-slate-100 hover:border-slate-500 hover:bg-slate-900"
-          onClick={() => signIn("github", { callbackUrl: "/consumer" })}
+          disabled={loading || Boolean(oauthProvider)}
+          className="flex w-full items-center justify-center gap-2 border-slate-700 bg-slate-900/80 text-slate-100 hover:border-slate-500 hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
+          onClick={async () => {
+            setOauthProvider("github");
+            await signIn("github", { callbackUrl: "/consumer" });
+          }}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
@@ -83,7 +96,11 @@ export default function ConsumerSignupPage() {
             alt="GitHub"
             className="h-5 w-5 rounded"
           />
-          <span>Sign up with GitHub</span>
+          <span>
+            {oauthProvider === "github"
+              ? "Signing up with GitHub..."
+              : "Sign up with GitHub"}
+          </span>
         </Button>
       </div>
       <form onSubmit={handleSubmit} className="space-y-4">

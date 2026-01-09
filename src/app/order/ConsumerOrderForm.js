@@ -17,6 +17,10 @@ export default function ConsumerOrderForm() {
   const [orderId, setOrderId] = useState("");
   const [admins, setAdmins] = useState([]);
   const [adminId, setAdminId] = useState("");
+  const [priority, setPriority] = useState("normal");
+  const [category, setCategory] = useState("general");
+  const [attachments, setAttachments] = useState([]); // { id, file, name, type, previewUrl, url, status }
+  const [uploadingAttachments, setUploadingAttachments] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -55,6 +59,52 @@ export default function ConsumerOrderForm() {
       return;
     }
 
+    // Upload any pending attachments before creating the order
+    let finalAttachments = attachments;
+    if (attachments.length) {
+      setUploadingAttachments(true);
+      try {
+        const updated = [];
+        for (const att of attachments) {
+          if (att.url) {
+            updated.push(att);
+            continue;
+          }
+          if (!att.file) continue;
+          const form = new FormData();
+          form.append("file", att.file);
+          const uploadRes = await fetch("/api/chat/upload", {
+            method: "POST",
+            body: form,
+          });
+          if (!uploadRes.ok) {
+            throw new Error("Upload failed");
+          }
+          const uploadData = await uploadRes.json();
+          if (!uploadData?.url) {
+            throw new Error("Upload failed");
+          }
+          updated.push({
+            ...att,
+            url: uploadData.url,
+            status: "uploaded",
+          });
+        }
+        finalAttachments = updated;
+        setAttachments(updated);
+      } catch (error) {
+        console.error("Attachment upload failed", error);
+        showToast({
+          title: "Could not upload files",
+          description: "Please try again or remove the attachments.",
+          variant: "error",
+        });
+        setUploadingAttachments(false);
+        return;
+      }
+      setUploadingAttachments(false);
+    }
+
     setLoading(true);
 
     try {
@@ -69,6 +119,11 @@ export default function ConsumerOrderForm() {
           adminId,
           adminName: admins.find((a) => a.id === adminId)?.name || null,
           adminEmail: admins.find((a) => a.id === adminId)?.email || null,
+          priority,
+          category,
+          attachments: finalAttachments
+            .filter((att) => att.url)
+            .map((att) => ({ type: att.type, name: att.name, url: att.url })),
         }),
       });
 
@@ -89,6 +144,7 @@ export default function ConsumerOrderForm() {
           variant: "success",
         });
         setDetails("");
+        setAttachments([]);
       }
     } catch (error) {
       console.error("Consumer order failed", error);
@@ -177,6 +233,135 @@ export default function ConsumerOrderForm() {
               value={budget}
               onChange={(event) => setBudget(event.target.value)}
             />
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="priority">Priority</Label>
+              <select
+                id="priority"
+                name="priority"
+                value={priority}
+                onChange={(event) => setPriority(event.target.value)}
+                className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900/70 px-3 py-2 text-sm text-slate-100 outline-none ring-sky-500/60 focus:border-sky-500 focus:ring-1"
+              >
+                <option value="low">Low</option>
+                <option value="normal">Normal</option>
+                <option value="urgent">Urgent</option>
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="category">Category</Label>
+              <select
+                id="category"
+                name="category"
+                value={category}
+                onChange={(event) => setCategory(event.target.value)}
+                className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900/70 px-3 py-2 text-sm text-slate-100 outline-none ring-sky-500/60 focus:border-sky-500 focus:ring-1"
+              >
+                <option value="general">General request</option>
+                <option value="procurement">Procurement</option>
+                <option value="logistics">Logistics</option>
+                <option value="support">Support</option>
+              </select>
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Reference files (optional)</Label>
+            <p className="text-[11px] text-slate-400">
+              Attach specs, screenshots, or documents. You can select multiple files.
+            </p>
+            <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-300">
+              <label className="inline-flex cursor-pointer items-center gap-1 rounded-full border border-dashed border-slate-700 px-3 py-1.5 hover:border-sky-500/60">
+                <span className="h-1.5 w-1.5 rounded-full bg-sky-400" />
+                <span>Add files</span>
+                <input
+                  type="file"
+                  multiple
+                  className="hidden"
+                  onChange={(event) => {
+                    const files = Array.from(event.target.files || []);
+                    if (!files.length) return;
+                    setAttachments((current) => {
+                      const next = [...current];
+                      for (const file of files) {
+                        const isImage = file.type.startsWith("image/");
+                        const previewUrl = URL.createObjectURL(file);
+                        next.push({
+                          id: `${Date.now()}-${file.name}-${Math.random().toString(16).slice(2)}`,
+                          file,
+                          name: file.name,
+                          type: isImage ? "image" : "file",
+                          previewUrl,
+                          url: null,
+                          status: "pending",
+                        });
+                      }
+                      return next;
+                    });
+                    event.target.value = "";
+                  }}
+                />
+              </label>
+              {uploadingAttachments && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-slate-900 px-2 py-1 text-[10px] text-sky-200">
+                  <span className="h-3 w-3 animate-spin rounded-full border border-sky-400/70 border-t-transparent" />
+                  Uploading files…
+                </span>
+              )}
+            </div>
+            {attachments.length > 0 && (
+              <div className="mt-2 space-y-1 rounded-2xl border border-slate-800 bg-slate-950/70 p-2 text-[11px] text-slate-200">
+                {attachments.map((att) => (
+                  <div
+                    key={att.id}
+                    className="flex items-center justify-between gap-2 rounded-xl bg-slate-900/70 px-2 py-1.5"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      {att.type === "image" ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={att.previewUrl}
+                          alt={att.name}
+                          className="h-7 w-7 rounded object-cover"
+                        />
+                      ) : (
+                        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-800 text-[10px] text-slate-200">
+                          FILE
+                        </span>
+                      )}
+                      <div className="min-w-0">
+                        <p className="truncate text-[11px] font-medium text-slate-100">
+                          {att.name}
+                        </p>
+                        <p className="text-[10px] text-slate-400">
+                          {att.url
+                            ? "Ready to send"
+                            : att.status === "pending"
+                            ? "Will upload on submit"
+                            : "Uploading…"}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAttachments((current) => {
+                          current.forEach((item) => {
+                            if (item.id === att.id && item.previewUrl?.startsWith("blob:")) {
+                              URL.revokeObjectURL(item.previewUrl);
+                            }
+                          });
+                          return current.filter((item) => item.id !== att.id);
+                        });
+                      }}
+                      className="rounded-full bg-slate-800 px-2 py-1 text-[10px] text-slate-200 hover:bg-slate-700"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
           <div className="space-y-2">
             <div className="flex items-baseline justify-between gap-2">
@@ -280,10 +465,14 @@ export default function ConsumerOrderForm() {
           </div>
           <Button
             type="submit"
-            disabled={loading}
+            disabled={loading || uploadingAttachments}
             className="mt-2 w-full justify-center bg-linear-to-r from-sky-500 to-indigo-500 hover:from-sky-400 hover:to-indigo-400 disabled:opacity-60"
           >
-            {loading ? "Sending request..." : "Submit order request"}
+            {loading
+              ? attachments.length
+                ? "Uploading files and sending..."
+                : "Sending request..."
+              : "Submit order request"}
           </Button>
         </form>
         {orderId && (
