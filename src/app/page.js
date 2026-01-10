@@ -25,6 +25,9 @@ export default function Home() {
               <span className="text-sm font-semibold text-slate-100">
                 Control Center
               </span>
+              <span className="text-[11px] text-slate-400">
+                Live admin dashboard + customer portal for operations teams
+              </span>
             </div>
           </div>
           <nav className="hidden items-center gap-2 text-[11px] md:flex">
@@ -49,19 +52,37 @@ export default function Home() {
         <section className="max-w-2xl space-y-6">
           <p className="inline-flex items-center gap-2 rounded-full border border-sky-500/40 bg-sky-500/15 px-3 py-1 text-[11px] font-medium text-sky-100 shadow-[0_0_40px_rgba(56,189,248,0.55)] backdrop-blur">
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-            Galaxy-powered operations hub
+            Shared inbox for orders & customer requests
           </p>
           <h1 className="text-balance text-3xl font-semibold leading-tight tracking-tight text-slate-50 sm:text-4xl lg:text-[3.2rem]">
-            All of your orders, customers, and chat in one
+            One place to see every order, customer request, and chat
             <span className="bg-linear-to-r from-sky-400 via-indigo-300 to-emerald-300 bg-clip-text text-transparent">
               {" "}
-              live dashboard.
+              across your team.
             </span>
           </h1>
           <p className="max-w-xl text-sm text-slate-300 sm:text-base">
-            Use the admin dashboard to review and fulfill requests, and give customers a clean
-            portal to place orders, upload documents, and track status in real time.
+            This is an internal admin dashboard and customer portal. Your team reviews and fulfills
+            incoming requests in one live queue, while customers use a simple portal to place orders,
+            upload documents, and track their status in real time.
           </p>
+          <div className="mt-3 space-y-1 text-[11px] text-slate-300 sm:text-xs">
+            <p className="font-medium text-slate-200">Who is this for?</p>
+            <div className="grid gap-2 sm:grid-cols-3">
+              <div>
+                <p className="font-medium text-slate-100">Operations teams</p>
+                <p className="text-slate-400">Manage incoming work in one queue.</p>
+              </div>
+              <div>
+                <p className="font-medium text-slate-100">Support & CX</p>
+                <p className="text-slate-400">See every customer message and file.</p>
+              </div>
+              <div>
+                <p className="font-medium text-slate-100">Founders & owners</p>
+                <p className="text-slate-400">Track revenue and SLAs in real time.</p>
+              </div>
+            </div>
+          </div>
           <HomeActions />
           <div className="mt-5 grid gap-4 text-[11px] text-slate-300 sm:grid-cols-3">
             <div className="group relative overflow-hidden rounded-2xl border border-slate-800/80 bg-slate-950/80 p-3 shadow-[0_0_30px_rgba(15,23,42,1)] transition-all duration-300 hover:-translate-y-1 hover:border-sky-500/80 hover:shadow-[0_0_50px_rgba(56,189,248,0.8)]">
